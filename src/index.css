@@ -1,0 +1,15 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Fallback white — Anvil2 tokens only resolve inside AnvilProvider scope */
+  background-color: #ffffff;
+}

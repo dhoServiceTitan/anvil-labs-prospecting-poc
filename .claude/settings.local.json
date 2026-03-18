@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:anvil.servicetitan.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm show:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/)",
+      "Bash(lsof -ti:3001)",
+      "Bash(xargs kill:*)",
+      "Bash(node -e \"require\\(''dotenv''\\).config\\(\\); console.log\\(''KEY:'', process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.slice\\(0,20\\) + ''...'' : ''NOT FOUND''\\)\")",
+      "Bash(xxd \"/Users/jessparis/Documents/AI Projects/Claude/a2-agentic-poc/.env\")"
+    ]
+  }
+}
