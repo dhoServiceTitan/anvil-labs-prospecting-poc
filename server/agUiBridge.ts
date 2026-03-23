@@ -1,12 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Response } from 'express';
-import { TOOLS, SYSTEM_PROMPT, TIME_SLOTS } from './agentTools.js';
+import { TOOLS, SYSTEM_PROMPT, Contact, searchContacts } from './agentTools.js';
 import { searchAnvil } from './mcpAnvilClient.js';
 
-export interface BookingState {
-  intent: { serviceType: string; description: string } | null;
-  contactDetails: { name: string; phone: string; address: string } | null;
-  scheduledCall: { date: string; timeSlot: string } | null;
+export interface ProspectingState {
+  query: string | null;
+  contacts: Contact[] | null;
+  addedLeads: string[];
 }
 
 // AG-UI event type constants (matching @ag-ui/core EventType enum values)
@@ -33,11 +33,11 @@ function sendEvent(res: Response, type: string, data: Record<string, unknown>) {
 export async function runAgentStream(
   client: Anthropic,
   apiMessages: Anthropic.MessageParam[],
-  bookingState: BookingState,
+  prospectingState: ProspectingState,
   res: Response
-): Promise<{ apiMessages: Anthropic.MessageParam[]; bookingState: BookingState }> {
+): Promise<{ apiMessages: Anthropic.MessageParam[]; prospectingState: ProspectingState }> {
   let msgs = [...apiMessages];
-  let state = { ...bookingState };
+  let state = { ...prospectingState };
 
   sendEvent(res, EventType.RUN_STARTED, { runId: crypto.randomUUID() });
 
@@ -56,7 +56,7 @@ export async function runAgentStream(
     }> = {};
 
     const stream = await client.messages.stream({
-      model: 'claude-sonnet-4-6',
+      model: process.env.CLAUDE_FOUNDRY_DEPLOYMENT ?? 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       tools: TOOLS,
@@ -149,88 +149,59 @@ export async function runAgentStream(
       break;
     }
 
-    // Process tool calls — query_anvil is handled async before the others
+    // Process tool calls
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const block of toolUseBlocks) {
       const input = block.input as Record<string, unknown>;
       let resultContent = '{"success":true}';
 
-      if (block.name === 'query_anvil') {
-        // Proxy to Anvil MCP and return real documentation to the agent
+      if (block.name === 'search_contacts') {
+        const query = input.query as string;
+        console.log(`[search_contacts] query: "${query}"`);
+        const contacts = searchContacts(query);
+        console.log(`[search_contacts] found ${contacts.length} contacts`);
+        state = { ...state, query, contacts };
+        resultContent = JSON.stringify({ count: contacts.length, contacts });
+        sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
+        sendEvent(res, EventType.STATE_SNAPSHOT, { snapshot: state });
+
+      } else if (block.name === 'query_anvil') {
         const query = input.query as string;
         console.log(`[query_anvil] querying Anvil MCP: "${query}"`);
         const docs = await searchAnvil(query);
         console.log(`[query_anvil] result length: ${docs.length} chars`);
         resultContent = JSON.stringify({ documentation: docs });
-        sendEvent(res, EventType.TOOL_CALL_RESULT, {
-          toolCallId: block.id,
-          result: resultContent,
-        });
-
-      } else if (block.name === 'set_service_intent') {
-        state = {
-          ...state,
-          intent: {
-            serviceType: input.service_type as string,
-            description: input.description as string,
-          },
-        };
-        sendEvent(res, EventType.TOOL_CALL_RESULT, {
-          toolCallId: block.id,
-          result: resultContent,
-        });
-        sendEvent(res, EventType.STATE_SNAPSHOT, { snapshot: state });
-
-      } else if (block.name === 'collect_contact_details') {
-        state = {
-          ...state,
-          contactDetails: {
-            name: input.name as string,
-            phone: input.phone as string,
-            address: input.address as string,
-          },
-        };
-        sendEvent(res, EventType.TOOL_CALL_RESULT, {
-          toolCallId: block.id,
-          result: resultContent,
-        });
-        sendEvent(res, EventType.STATE_SNAPSHOT, { snapshot: state });
+        sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
 
       } else if (block.name === 'render_ui') {
         const component = input.component as string;
         const uiProps = ((input.props ?? {}) as Record<string, unknown>);
 
-        // Inject server-authoritative time slots when scheduling hasn't been done yet
-        if (!state.scheduledCall) {
-          uiProps.slots = TIME_SLOTS;
-        }
+        // Inject server-authoritative contact data
+        uiProps.contacts = state.contacts ?? [];
+        uiProps.addedLeads = state.addedLeads;
 
-        sendEvent(res, EventType.TOOL_CALL_RESULT, {
-          toolCallId: block.id,
-          result: resultContent,
-        });
+        sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
         sendEvent(res, EventType.CUSTOM, {
           name: 'RENDER_UI',
           value: {
             component,
+            target: (input.target as string | undefined) ?? 'panel',
             title: input.title as string | undefined,
             props: uiProps,
           },
         });
 
-      } else if (block.name === 'schedule_call') {
+      } else if (block.name === 'add_to_leads') {
+        const contactIds = input.contact_ids as string[];
+        console.log(`[add_to_leads] adding: ${contactIds.join(', ')}`);
         state = {
           ...state,
-          scheduledCall: {
-            date: input.date as string,
-            timeSlot: input.time_slot as string,
-          },
+          addedLeads: [...new Set([...state.addedLeads, ...contactIds])],
         };
-        sendEvent(res, EventType.TOOL_CALL_RESULT, {
-          toolCallId: block.id,
-          result: resultContent,
-        });
+        resultContent = JSON.stringify({ success: true, addedIds: contactIds });
+        sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
         sendEvent(res, EventType.STATE_SNAPSHOT, { snapshot: state });
       }
 
@@ -246,5 +217,5 @@ export async function runAgentStream(
   }
 
   sendEvent(res, EventType.RUN_FINISHED, {});
-  return { apiMessages: msgs, bookingState: state };
+  return { apiMessages: msgs, prospectingState: state };
 }

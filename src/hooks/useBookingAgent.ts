@@ -1,42 +1,33 @@
 import { useState, useCallback, useRef } from 'react';
 import {
-  BookingState,
+  ProspectingState,
   ChatMessage,
   RenderUIPayload,
-  StepId,
-  UseBookingAgentReturn,
+  UseProspectingAgentReturn,
 } from '../types';
 
 const SESSION_ID = crypto.randomUUID();
 
-const INITIAL_BOOKING_STATE: BookingState = {
-  intent: null,
-  contactDetails: null,
-  scheduledCall: null,
+const INITIAL_STATE: ProspectingState = {
+  query: null,
+  contacts: null,
+  addedLeads: [],
 };
 
 const GREETING: ChatMessage = {
   id: crypto.randomUUID(),
   role: 'assistant',
-  content:
-    "Hi! I'm here to help you book a home service call. Could you start by describing the issue you're experiencing?",
+  content: "Hi! I can help you find contacts and add them as leads. Who are you looking for? For example: \"facilities managers at Boeing in Charleston\" or \"VP of Operations at manufacturing companies in South Carolina\".",
   timestamp: new Date(),
 };
 
-function deriveCurrentStep(state: BookingState): StepId {
-  if (!state.intent) return 'intent';
-  if (!state.contactDetails) return 'details';
-  return 'schedule';
-}
-
-export function useBookingAgent(): UseBookingAgentReturn {
+export function useBookingAgent(): UseProspectingAgentReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
-  const [bookingState, setBookingState] = useState<BookingState>(INITIAL_BOOKING_STATE);
+  const [prospectingState, setProspectingState] = useState<ProspectingState>(INITIAL_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renderUIPayload, setRenderUIPayload] = useState<RenderUIPayload | null>(null);
 
-  // Accumulate the current streaming assistant message
   const streamingTextRef = useRef<string>('');
   const streamingMsgIdRef = useRef<string | null>(null);
 
@@ -114,7 +105,6 @@ export function useBookingAgent(): UseBookingAgentReturn {
             if (type === 'TEXT_MESSAGE_START') {
               streamingMsgIdRef.current = event.messageId as string;
               streamingTextRef.current = '';
-              // Create placeholder message
               appendOrUpdateMessage({
                 id: streamingMsgIdRef.current,
                 role: 'assistant',
@@ -132,8 +122,8 @@ export function useBookingAgent(): UseBookingAgentReturn {
             } else if (type === 'TEXT_MESSAGE_END') {
               streamingMsgIdRef.current = null;
             } else if (type === 'STATE_SNAPSHOT') {
-              const snapshot = event.snapshot as BookingState;
-              setBookingState(snapshot);
+              const snapshot = event.snapshot as ProspectingState;
+              setProspectingState(snapshot);
             } else if (type === 'CUSTOM') {
               const customEvent = event as { name: string; value: RenderUIPayload };
               if (customEvent.name === 'RENDER_UI') {
@@ -158,18 +148,13 @@ export function useBookingAgent(): UseBookingAgentReturn {
     setRenderUIPayload(null);
   }, []);
 
-  const currentStep = deriveCurrentStep(bookingState);
-  const isComplete = bookingState.scheduledCall !== null;
-
   return {
     messages,
-    bookingState,
+    prospectingState,
     isLoading,
     error,
     renderUIPayload,
     sendMessage,
     dismissUI,
-    currentStep,
-    isComplete,
   };
 }

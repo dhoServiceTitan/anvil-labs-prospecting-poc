@@ -1,56 +1,65 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-export interface TimeSlot {
-  date: string;
-  displayDate: string;
-  slot: string;
+export interface Contact {
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  location: string;
+  phone: string;
+  email: string;
 }
 
-export const TIME_SLOTS: TimeSlot[] = [
-  { date: '2026-03-24', displayDate: 'Tuesday, March 24', slot: '9:00 AM – 11:00 AM' },
-  { date: '2026-03-24', displayDate: 'Tuesday, March 24', slot: '1:00 PM – 3:00 PM' },
-  { date: '2026-03-24', displayDate: 'Tuesday, March 24', slot: '4:00 PM – 6:00 PM' },
-  { date: '2026-03-25', displayDate: 'Wednesday, March 25', slot: '8:00 AM – 10:00 AM' },
-  { date: '2026-03-25', displayDate: 'Wednesday, March 25', slot: '12:00 PM – 2:00 PM' },
-  { date: '2026-03-25', displayDate: 'Wednesday, March 25', slot: '3:00 PM – 5:00 PM' },
-  { date: '2026-03-26', displayDate: 'Thursday, March 26', slot: '10:00 AM – 12:00 PM' },
-  { date: '2026-03-26', displayDate: 'Thursday, March 26', slot: '2:00 PM – 4:00 PM' },
-  { date: '2026-03-26', displayDate: 'Thursday, March 26', slot: '5:00 PM – 7:00 PM' },
+// ─── Mock contact database ────────────────────────────────────────────────────
+
+const MOCK_CONTACTS: Contact[] = [
+  { id: 'c1',  name: 'Adam Bennett',      title: 'Facilities Coordinator',  company: 'Boeing Company',         location: 'Charleston, SC',       phone: '(843) 555-0101', email: 'a.bennett@boeing.com' },
+  { id: 'c2',  name: 'Stephen Daniels',   title: 'Facilities Manager',      company: 'Boeing Company',         location: 'Charleston, SC',       phone: '(843) 555-0102', email: 's.daniels@boeing.com' },
+  { id: 'c3',  name: 'John Frank',        title: 'Facilities Director',     company: 'Boeing Company',         location: 'North Charleston, SC', phone: '(843) 555-0103', email: 'j.frank@boeing.com' },
+  { id: 'c4',  name: 'Jessica Nichols',   title: 'Facilities Coordinator',  company: 'Boeing Company',         location: 'North Charleston, SC', phone: '(843) 555-0104', email: 'j.nichols@boeing.com' },
+  { id: 'c5',  name: 'Samuel Scott',      title: 'Project Manager',         company: 'Boeing Company',         location: 'Charleston, SC',       phone: '(843) 555-0105', email: 's.scott@boeing.com' },
+  { id: 'c6',  name: 'Maria Chen',        title: 'VP of Operations',        company: 'Lockheed Martin',        location: 'Goose Creek, SC',      phone: '(843) 555-0201', email: 'm.chen@lmco.com' },
+  { id: 'c7',  name: 'Robert Walsh',      title: 'Facilities Manager',      company: 'Lockheed Martin',        location: 'Goose Creek, SC',      phone: '(843) 555-0202', email: 'r.walsh@lmco.com' },
+  { id: 'c8',  name: 'Angela Torres',     title: 'Director of Facilities',  company: 'Bosch Rexroth',          location: 'Charleston, SC',       phone: '(843) 555-0301', email: 'a.torres@boschrexroth.com' },
+  { id: 'c9',  name: 'Derek Huang',       title: 'Facilities Coordinator',  company: 'Bosch Rexroth',          location: 'Charleston, SC',       phone: '(843) 555-0302', email: 'd.huang@boschrexroth.com' },
+  { id: 'c10', name: 'Patricia Monroe',   title: 'Head of Facilities',      company: 'Volvo Cars',             location: 'Berkeley County, SC',  phone: '(843) 555-0401', email: 'p.monroe@volvocars.com' },
+  { id: 'c11', name: 'Kevin Okafor',      title: 'Facilities Manager',      company: 'Volvo Cars',             location: 'Berkeley County, SC',  phone: '(843) 555-0402', email: 'k.okafor@volvocars.com' },
+  { id: 'c12', name: 'Susan Park',        title: 'Project Manager',         company: 'Charleston Water System',location: 'Charleston, SC',       phone: '(843) 555-0501', email: 's.park@charlestonwater.com' },
+  { id: 'c13', name: 'Thomas Rivera',     title: 'Facilities Director',     company: 'MUSC Health',            location: 'Charleston, SC',       phone: '(843) 555-0601', email: 't.rivera@musc.edu' },
+  { id: 'c14', name: 'Laura Kim',         title: 'Operations Manager',      company: 'Port of Charleston',     location: 'Charleston, SC',       phone: '(843) 555-0701', email: 'l.kim@scspa.com' },
+  { id: 'c15', name: 'Marcus Webb',       title: 'Facilities Coordinator',  company: 'Charleston County',      location: 'Charleston, SC',       phone: '(843) 555-0801', email: 'm.webb@charlestoncounty.org' },
 ];
+
+export function searchContacts(query: string): Contact[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const scored = MOCK_CONTACTS.map((c) => {
+    const haystack = `${c.name} ${c.title} ${c.company} ${c.location}`.toLowerCase();
+    const score = terms.filter((t) => haystack.includes(t)).length;
+    // Add a small random jitter so repeated queries return varied ordering
+    return { contact: c, score: score + Math.random() * 0.5 };
+  });
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map(({ contact }) => contact)
+    .slice(0, 10);
+}
+
+// ─── Tool definitions ─────────────────────────────────────────────────────────
 
 export const TOOLS: Anthropic.Tool[] = [
   {
-    name: 'set_service_intent',
+    name: 'search_contacts',
     description:
-      'Call this tool as soon as you have confidently classified the type of service the customer needs. This marks Step 1 as complete.',
+      'Search the contact database for prospects matching the user\'s criteria. Returns up to 15 contacts. Call this as soon as you understand who the user is looking for.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        service_type: {
+        query: {
           type: 'string',
-          enum: ['plumbing', 'electrical', 'HVAC', 'appliance', 'general'],
-          description: 'The category of home service required.',
-        },
-        description: {
-          type: 'string',
-          description: "A concise summary of the customer's stated problem.",
+          description: 'Search query — include role, company, location, or any combination the user mentioned.',
         },
       },
-      required: ['service_type', 'description'],
-    },
-  },
-  {
-    name: 'collect_contact_details',
-    description:
-      "Call this tool once you have collected the customer's full name, phone number, and service address. Do not call this until all three fields have been provided. This marks Step 2 as complete.",
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        name: { type: 'string', description: "Customer's full name." },
-        phone: { type: 'string', description: "Customer's phone number." },
-        address: { type: 'string', description: 'Full service address.' },
-      },
-      required: ['name', 'phone', 'address'],
+      required: ['query'],
     },
   },
   {
@@ -62,7 +71,7 @@ Describe the interaction pattern you need — the tool returns real Anvil2 docum
 component names, usage guidance, props, and code examples.
 
 Examples of good queries:
-- "component for browsing and selecting from a list of options"
+- "component for displaying a scrollable list of items with contact details and action buttons"
 - "blocking confirmation dialog that requires explicit user consent"
 - "inline contextual tooltip with an action button"`,
     input_schema: {
@@ -78,18 +87,22 @@ Examples of good queries:
   },
   {
     name: 'render_ui',
-    description: `Render an Anvil2 component for the user to interact with.
+    description: `Render an Anvil2 component showing the contact results.
 
 ALWAYS call query_anvil first to determine the correct component name and understand its props.
-Use the exact component name from the Anvil2 documentation (e.g., "Drawer", "Dialog", "Popover").
-Do NOT call render_ui for simple conversational text collection — gather name, phone, address inline.`,
+Use the exact component name from the Anvil2 documentation.
+The server will automatically inject the contact list into the props — you do not need to include contacts yourself.`,
     input_schema: {
       type: 'object' as const,
       properties: {
         component: {
           type: 'string',
-          description:
-            'Exact Anvil2 component name as returned by query_anvil (e.g., "Drawer", "Dialog").',
+          description: 'Exact Anvil2 component name as returned by query_anvil (e.g., "Drawer", "Dialog").',
+        },
+        target: {
+          type: 'string',
+          enum: ['panel', 'overlay'],
+          description: 'Where to render: "panel" renders inline in the right-hand canvas panel; "overlay" opens a floating drawer or dialog. Always use "panel" unless the interaction requires blocking the user.',
         },
         title: {
           type: 'string',
@@ -97,56 +110,48 @@ Do NOT call render_ui for simple conversational text collection — gather name,
         },
         props: {
           type: 'object',
-          description:
-            'Component props payload. For slot selection the server will inject available time slots automatically.',
+          description: 'Additional component props. Do not include contacts — the server injects them.',
         },
       },
-      required: ['component', 'props'],
+      required: ['component', 'target', 'props'],
     },
   },
   {
-    name: 'schedule_call',
+    name: 'add_to_leads',
     description:
-      'Call this tool once the customer has selected a specific date and time slot. This marks Step 3 as complete and finalizes the booking.',
+      'Add one or more contacts to the CRM as leads. Call this once the user has indicated which contacts they want to add.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        date: { type: 'string', description: 'Appointment date in ISO 8601 format (YYYY-MM-DD).' },
-        time_slot: { type: 'string', description: 'Selected time window exactly as presented.' },
+        contact_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of contact IDs to add as leads.',
+        },
       },
-      required: ['date', 'time_slot'],
+      required: ['contact_ids'],
     },
   },
 ];
 
-const slotsText = TIME_SLOTS.map((s) => `• ${s.displayDate}: ${s.slot}`).join('\n');
+// ─── System prompt ────────────────────────────────────────────────────────────
 
-export const SYSTEM_PROMPT = `You are a friendly and efficient service booking assistant for a home services company. Your job is to guide the customer through a 3-step booking process in strict order.
+export const SYSTEM_PROMPT = `You are a sales prospecting assistant embedded in ServiceTitan. Your job is to help sales professionals find contacts and add them as leads to the CRM.
 
-## Step 1 – Understand the Service Need
-Ask the customer to describe their problem. Based on their response, classify it into one of these categories: plumbing, electrical, HVAC, appliance, or general.
-Once you are confident in the classification, call the \`set_service_intent\` tool. Then immediately continue to Step 2 WITHOUT waiting for another user message.
+## Workflow
 
-## Step 2 – Collect Contact Details
-Ask for the customer's full name, phone number, and service address. Collect them conversationally — do NOT call render_ui for this step.
-Once you have all three, call the \`collect_contact_details\` tool. Then immediately continue to Step 3 WITHOUT waiting for another user message.
+1. The user describes who they're looking for in natural language (role, company, location, etc.).
+2. Call \`search_contacts\` with their query immediately — do not ask clarifying questions first.
+3. Call \`query_anvil\` to discover the right Anvil2 component for displaying a list of contacts with add-to-leads actions.
+4. Call \`render_ui\` with the component name from the docs. The server will inject the contact list automatically.
+5. Tell the user how many contacts were found and that the panel is open for them to browse.
+6. When the user says they want to add specific contacts (or "add all"), call \`add_to_leads\` with those contact IDs.
+7. Confirm which contacts were added and ask if they'd like to search for more.
 
-## Step 3 – Schedule the Appointment
-The user needs to select from a list of available time slots.
-1. First call \`query_anvil\` to discover the right Anvil2 component for browsing and selecting from a list.
-2. Based on the documentation returned, call \`render_ui\` with the component name from the docs.
-3. Tell the customer a panel has opened for them to choose a slot. Do NOT list the slots in chat.
-Once the user selects a slot (they will send their selection as a message), call \`schedule_call\`.
-
-## Confirmation
-After scheduling, call \`query_anvil\` to find the right Anvil2 component for a final booking confirmation that requires explicit user consent, then call \`render_ui\` with that component.
-
-## Available Time Slots
-${slotsText}
-
-## Important Rules
-- Always complete steps in order 1 → 2 → 3. Never skip a step.
-- After calling a tool, continue the conversation naturally — do not go silent.
-- Be conversational, warm, and concise.
-- Never ask for information you have already collected.
-- Always query_anvil before render_ui — never guess component names.`;
+## Rules
+- Call \`search_contacts\` first, before any other tool.
+- Always call \`query_anvil\` before \`render_ui\` — never guess component names.
+- Always set \`target: "panel"\` on \`render_ui\` — contact results render inline in the canvas panel, never as a floating overlay.
+- After \`add_to_leads\` completes, call \`render_ui\` again with the same component and target to refresh the panel — this updates the lead status indicators without requiring a new search.
+- Do not list contacts in the chat — the UI panel shows them.
+- Be concise and professional.`;

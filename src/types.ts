@@ -1,10 +1,17 @@
-export type StepId = 'intent' | 'details' | 'schedule';
-export type StepStatus = 'pending' | 'active' | 'complete';
+export interface Contact {
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  location: string;
+  phone: string;
+  email: string;
+}
 
-export interface BookingState {
-  intent: { serviceType: string; description: string } | null;
-  contactDetails: { name: string; phone: string; address: string } | null;
-  scheduledCall: { date: string; timeSlot: string } | null;
+export interface ProspectingState {
+  query: string | null;
+  contacts: Contact[] | null;
+  addedLeads: string[];
 }
 
 export interface ChatMessage {
@@ -14,18 +21,15 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export interface TimeSlot {
-  date: string;
-  displayDate: string;
-  slot: string;
-}
-
 export interface RenderUIPayload {
   /** Anvil2 component name chosen by the agent (e.g. "Drawer", "Dialog", "Popover") */
   component: string;
+  /** Where to render: "panel" = inline canvas, "overlay" = floating drawer/dialog */
+  target: 'panel' | 'overlay';
   title?: string;
   props: {
-    slots?: TimeSlot[];
+    contacts?: Contact[];
+    addedLeads?: string[];
     summary?: string;
     body?: string;
     actionLabel?: string;
@@ -33,14 +37,12 @@ export interface RenderUIPayload {
   };
 }
 
-export interface UseBookingAgentReturn {
+export interface UseProspectingAgentReturn {
   messages: ChatMessage[];
-  bookingState: BookingState;
+  prospectingState: ProspectingState;
   isLoading: boolean;
   error: string | null;
   renderUIPayload: RenderUIPayload | null;
   sendMessage: (text: string) => Promise<void>;
   dismissUI: () => void;
-  currentStep: StepId;
-  isComplete: boolean;
 }
