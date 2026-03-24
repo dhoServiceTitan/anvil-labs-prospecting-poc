@@ -7,7 +7,7 @@ import {
   Text,
 } from '@servicetitan/anvil2';
 import React from 'react';
-import { Contact, RenderUIPayload } from '../types';
+import { Contact, GenericResult, RenderUIPayload } from '../types';
 
 interface AgentUIOverlayProps {
   payload: RenderUIPayload | null;
@@ -63,6 +63,47 @@ function ContactList({
           </React.Fragment>
         );
       })}
+    </Flex>
+  );
+}
+
+// ─── Generic item list — renders GenericResult[] (wizard steps, search results) ─
+
+const BADGE_COLORS: Record<string, string> = {
+  Complete: '#22c55e',
+  Active: '#3b82f6',
+  Pending: '#9ca3af',
+  Overdue: '#ef4444',
+};
+
+function GenericItemList({ items }: { items: GenericResult[] }) {
+  return (
+    <Flex direction="column" gap="3">
+      {items.map((item, i) => (
+        <React.Fragment key={item.id}>
+          {i > 0 && <div style={{ borderTop: '1px solid var(--border-color)' }} />}
+          <Flex justifyContent="space-between" alignItems="center" gap="3">
+            <Flex direction="column" gap="1">
+              <Text variant="body"><strong>{item.title}</strong></Text>
+              {item.subtitle && <Text variant="body" subdued>{item.subtitle}</Text>}
+              {item.meta && <Text variant="body" subdued>{item.meta}</Text>}
+            </Flex>
+            {item.badge && (
+              <span style={{
+                fontSize: 12,
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: 12,
+                background: `${BADGE_COLORS[item.badge] ?? '#6b7280'}22`,
+                color: BADGE_COLORS[item.badge] ?? '#6b7280',
+                whiteSpace: 'nowrap',
+              }}>
+                {item.badge === 'Complete' ? '✓ ' : ''}{item.badge}
+              </span>
+            )}
+          </Flex>
+        </React.Fragment>
+      ))}
     </Flex>
   );
 }
@@ -160,6 +201,7 @@ function resolveRenderer(componentName: string): React.ComponentType<RendererPro
 // content renders directly into the canvas — no Drawer/Dialog wrapper needed.
 
 function PanelRenderer({ payload, onClose, onContactsSelected }: RendererProps) {
+  const items = payload.props.items as GenericResult[] | undefined;
   const contacts = (payload.props.contacts ?? []) as Contact[];
   const addedLeads = (payload.props.addedLeads ?? []) as string[];
   return (
@@ -167,12 +209,15 @@ function PanelRenderer({ payload, onClose, onContactsSelected }: RendererProps) 
       {payload.title && (
         <Text variant="headline" el="h2">{payload.title}</Text>
       )}
-      <ContactList
-        contacts={contacts}
-        addedLeads={addedLeads}
-        onAdd={(c) => onContactsSelected([c])}
-        onAddAll={() => onContactsSelected(contacts.filter((c) => !addedLeads.includes(c.id)))}
-      />
+      {items
+        ? <GenericItemList items={items} />
+        : <ContactList
+            contacts={contacts}
+            addedLeads={addedLeads}
+            onAdd={(c) => onContactsSelected([c])}
+            onAddAll={() => onContactsSelected(contacts.filter((c) => !addedLeads.includes(c.id)))}
+          />
+      }
     </Flex>
   );
 }

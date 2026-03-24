@@ -50,13 +50,20 @@ Respond with ONLY valid JSON, no markdown, no code fences.`;
 const WIZARD_GENERATION_PROMPT = `You are given a wizard use-case description for an AI assistant. Generate a JSON object with two fields:
 
 1. "systemPrompt" — A system prompt for the assistant. It MUST include these workflow instructions:
-   - On the first message, immediately call \`query_anvil\` to find a to-do list component, then call
-     \`render_ui\` with target: "panel" to show the full step list. The server injects the step data automatically.
-   - When the user is ready to begin a step (e.g. says "begin", "proceed", or clicks a CTA), immediately
-     call \`execute_step\` with the step number — no confirmation needed.
-   - After \`execute_step\` returns, call \`render_ui\` again to refresh the panel with the updated step
-     statuses. The server will mark the completed step and activate the next one automatically.
-   - Walk through steps sequentially (1 → 2 → 3 ...). Do not skip or combine steps.
+
+   INITIAL LOAD (when user says "start" or any greeting):
+   - Call \`query_anvil\` to find a to-do list or checklist component.
+   - Call \`render_ui\` with target: "panel" to show the full step list. Server injects step data.
+   - Tell the user what the wizard does and invite them to begin Step 1. STOP — do not execute any steps yet.
+
+   WHEN USER BEGINS A STEP (user says "begin", "next", "proceed", "go", or similar):
+   - Immediately call \`execute_step\` with the current step number — no confirmation needed.
+   - After \`execute_step\` returns, call \`render_ui\` again to refresh the panel (server updates badges).
+   - Briefly describe what was done. Then invite the user to begin the next step. STOP and wait.
+
+   RULES:
+   - Never auto-advance steps. Always wait for the user to explicitly say they want to proceed.
+   - Walk steps sequentially (1 → 2 → 3 ...). Do not skip or combine steps.
    - Keep text responses short — the panel carries the progress state, not the chat.
    - After step 5 completes, call \`render_ui\` one final time and congratulate the user.
 

@@ -32,6 +32,7 @@ export function useBookingAgent(): UseProspectingAgentReturn {
 
   const streamingTextRef = useRef<string>('');
   const streamingMsgIdRef = useRef<string | null>(null);
+  const autoStartFiredRef = useRef(false);
 
   const appendOrUpdateMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => {
@@ -155,7 +156,8 @@ export function useBookingAgent(): UseProspectingAgentReturn {
   // immediately renders its initial UI (e.g. the wizard to-do list) without
   // showing a user message bubble.
   useEffect(() => {
-    if (IS_PROSPECTING) return;
+    if (IS_PROSPECTING || autoStartFiredRef.current) return;
+    autoStartFiredRef.current = true;
     setIsLoading(true);
     fetch('/api/chat', {
       method: 'POST',
