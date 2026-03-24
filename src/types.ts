@@ -1,3 +1,11 @@
+export interface GenericResult {
+  id: string;
+  title: string;
+  subtitle?: string;
+  meta?: string;
+  badge?: string;
+}
+
 export interface Contact {
   id: string;
   name: string;

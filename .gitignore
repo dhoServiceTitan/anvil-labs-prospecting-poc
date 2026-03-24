@@ -9,3 +9,4 @@ server/*.js
 server/*.d.ts
 vite.config.js
 vite.config.d.ts
+eval-report-*.md
