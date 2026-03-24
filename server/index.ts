@@ -65,7 +65,7 @@ app.post('/api/chat', async (req, res) => {
     } else {
       const session = genericSessions.get(sessionId) ?? {
         apiMessages: [] as Anthropic.MessageParam[],
-        state: { lastResults: [] },
+        state: { lastResults: [], completedSteps: [] },
       };
       const newApiMessages = [...session.apiMessages, ...messages];
       const result = await runGenericAgentStream(

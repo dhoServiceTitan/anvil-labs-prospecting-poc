@@ -15,15 +15,18 @@ export interface GenericResult {
 }
 
 export interface BootstrappedConfig {
+  type: 'search' | 'wizard';
   systemPrompt: string;
   mockData: GenericResult[];
-  searchDescription: string;
+  searchDescription: string; // empty string for wizard type
 }
 
 // In-memory cache. Populated lazily on first request per use case.
 export const USE_CASE_REGISTRY = new Map<string, BootstrappedConfig>();
 
-const GENERATION_PROMPT = `You are given a use-case description for an AI assistant. Generate a JSON object with three fields:
+// ─── Generation prompts ────────────────────────────────────────────────────────
+
+const SEARCH_GENERATION_PROMPT = `You are given a use-case description for an AI assistant. Generate a JSON object with three fields:
 
 1. "systemPrompt" — A system prompt for the assistant. It MUST include these workflow instructions:
    - Call \`search\` first to retrieve relevant items based on the user's query.
@@ -44,20 +47,50 @@ const GENERATION_PROMPT = `You are given a use-case description for an AI assist
 
 Respond with ONLY valid JSON, no markdown, no code fences.`;
 
+const WIZARD_GENERATION_PROMPT = `You are given a wizard use-case description for an AI assistant. Generate a JSON object with two fields:
+
+1. "systemPrompt" — A system prompt for the assistant. It MUST include these workflow instructions:
+   - On the first message, immediately call \`query_anvil\` to find a to-do list component, then call
+     \`render_ui\` with target: "panel" to show the full step list. The server injects the step data automatically.
+   - When the user is ready to begin a step (e.g. says "begin", "proceed", or clicks a CTA), immediately
+     call \`execute_step\` with the step number — no confirmation needed.
+   - After \`execute_step\` returns, call \`render_ui\` again to refresh the panel with the updated step
+     statuses. The server will mark the completed step and activate the next one automatically.
+   - Walk through steps sequentially (1 → 2 → 3 ...). Do not skip or combine steps.
+   - Keep text responses short — the panel carries the progress state, not the chat.
+   - After step 5 completes, call \`render_ui\` one final time and congratulate the user.
+
+2. "mockData" — An array with exactly one item per step defined in the use case. Each item must have:
+   - "id": "step-N" (e.g. "step-1")
+   - "title": the step name (short, matches the step list in the use case description)
+   - "subtitle": one sentence describing what this step does
+   - "badge": "Pending" for all steps (the server will update this to "Active" or "Complete" at runtime)
+
+Respond with ONLY valid JSON, no markdown, no code fences.`;
+
+// ─── MD parsing helpers ────────────────────────────────────────────────────────
+
+function detectUseCaseType(mdContent: string): 'search' | 'wizard' {
+  const typeMatch = mdContent.match(/^##\s+Type\s*\n([^\n]+)/m);
+  if (typeMatch && typeMatch[1].trim().toLowerCase() === 'wizard') {
+    return 'wizard';
+  }
+  return 'search';
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
+
 /**
  * Lazy bootstrap: reads the MD file for the given assistantId, calls Claude to generate
- * systemPrompt + mockData + searchDescription, and caches the result.
- * Returns null if the file is not found or generation fails.
+ * config, and caches the result. Returns null if file not found or generation fails.
  */
 export async function bootstrapUseCase(
   assistantId: string,
   client: Anthropic,
 ): Promise<BootstrappedConfig | null> {
-  // Return cached result if available
   const cached = USE_CASE_REGISTRY.get(assistantId);
   if (cached) return cached;
 
-  // Read the MD file
   const mdPath = path.join(USE_CASES_DIR, `${assistantId}.md`);
   let mdContent: string;
   try {
@@ -67,17 +100,15 @@ export async function bootstrapUseCase(
     return null;
   }
 
-  // Call Claude to generate the config
+  const useCaseType = detectUseCaseType(mdContent);
+  const generationPrompt =
+    useCaseType === 'wizard' ? WIZARD_GENERATION_PROMPT : SEARCH_GENERATION_PROMPT;
+
   try {
     const response = await client.messages.create({
       model: process.env.CLAUDE_FOUNDRY_DEPLOYMENT ?? 'claude-sonnet-4-6',
       max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: `${GENERATION_PROMPT}\n\n---\n\n${mdContent}`,
-        },
-      ],
+      messages: [{ role: 'user', content: `${generationPrompt}\n\n---\n\n${mdContent}` }],
     });
 
     const rawText = response.content
@@ -88,26 +119,23 @@ export async function bootstrapUseCase(
     const parsed = JSON.parse(rawText) as {
       systemPrompt: string;
       mockData: GenericResult[];
-      searchDescription: string;
+      searchDescription?: string;
     };
 
-    if (
-      typeof parsed.systemPrompt !== 'string' ||
-      !Array.isArray(parsed.mockData) ||
-      typeof parsed.searchDescription !== 'string'
-    ) {
+    if (typeof parsed.systemPrompt !== 'string' || !Array.isArray(parsed.mockData)) {
       throw new Error('Generated JSON is missing required fields');
     }
 
     const config: BootstrappedConfig = {
+      type: useCaseType,
       systemPrompt: parsed.systemPrompt,
       mockData: parsed.mockData,
-      searchDescription: parsed.searchDescription,
+      searchDescription: parsed.searchDescription ?? '',
     };
 
     USE_CASE_REGISTRY.set(assistantId, config);
     console.log(
-      `[bootstrapper] Generated config for "${assistantId}": ${config.mockData.length} mock items`,
+      `[bootstrapper] Generated ${useCaseType} config for "${assistantId}": ${config.mockData.length} items`,
     );
     return config;
   } catch (err) {

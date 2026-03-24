@@ -74,6 +74,22 @@ function buildSearchTool(description: string): Anthropic.Tool {
   };
 }
 
+const EXECUTE_STEP_TOOL: Anthropic.Tool = {
+  name: 'execute_step',
+  description: `Execute a wizard step immediately. Call this as soon as the user indicates they want to begin a step.
+Do not ask for confirmation — execute immediately and then call render_ui to refresh the to-do list.`,
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      step_number: {
+        type: 'number',
+        description: 'The step number to execute (1-based).',
+      },
+    },
+    required: ['step_number'],
+  },
+};
+
 // ─── Result types ─────────────────────────────────────────────────────────────
 
 export interface ProspectingBuildResult {
@@ -131,14 +147,15 @@ export async function buildAssistantConfig(
     };
   }
 
+  const tools =
+    config.type === 'wizard'
+      ? [EXECUTE_STEP_TOOL, QUERY_ANVIL_TOOL, RENDER_UI_TOOL]
+      : [buildSearchTool(config.searchDescription), QUERY_ANVIL_TOOL, RENDER_UI_TOOL];
+
   return {
     type: 'generic',
     systemPrompt: config.systemPrompt,
-    tools: [
-      buildSearchTool(config.searchDescription),
-      QUERY_ANVIL_TOOL,
-      RENDER_UI_TOOL,
-    ],
+    tools,
     mockData: config.mockData,
   };
 }

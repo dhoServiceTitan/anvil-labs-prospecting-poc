@@ -5,6 +5,7 @@ import { GenericResult } from './bootstrapper.js';
 
 export interface GenericState {
   lastResults: GenericResult[];
+  completedSteps: number[]; // 1-based step numbers that have been completed (wizard use cases)
 }
 
 // AG-UI event type constants
@@ -152,7 +153,18 @@ export async function runGenericAgentStream(
       const input = block.input as Record<string, unknown>;
       let resultContent = '{"success":true}';
 
-      if (block.name === 'search') {
+      if (block.name === 'execute_step') {
+        const stepNumber = input.step_number as number;
+        console.log(`[execute_step] completing step ${stepNumber}`);
+        const newCompleted = [...new Set([...currentState.completedSteps, stepNumber])].sort(
+          (a, b) => a - b,
+        );
+        currentState = { ...currentState, completedSteps: newCompleted };
+        resultContent = JSON.stringify({ success: true, completed_step: stepNumber });
+        sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
+        sendEvent(res, EventType.STATE_SNAPSHOT, { snapshot: currentState });
+
+      } else if (block.name === 'search') {
         // Return all mock data for any query (mock search)
         currentState = { ...currentState, lastResults: mockData };
         resultContent = JSON.stringify({ count: mockData.length, items: mockData });
@@ -170,8 +182,28 @@ export async function runGenericAgentStream(
         const component = input.component as string;
         const uiProps = ((input.props ?? {}) as Record<string, unknown>);
 
-        // Inject server-authoritative items
-        uiProps.items = currentState.lastResults;
+        // For wizard use cases: rebuild step items with server-authoritative status badges.
+        // A step is "Complete" if its number is in completedSteps, "Active" if it's the
+        // next uncompleted step, and "Pending" otherwise.
+        if (currentState.completedSteps.length > 0 || mockData.some((d) => d.id?.startsWith('step-'))) {
+          const nextStep =
+            currentState.completedSteps.length > 0
+              ? Math.max(...currentState.completedSteps) + 1
+              : 1;
+          uiProps.items = mockData.map((item) => {
+            const stepNum = parseInt(item.id.replace('step-', ''), 10);
+            if (isNaN(stepNum)) return item;
+            const isComplete = currentState.completedSteps.includes(stepNum);
+            const isActive = stepNum === nextStep && !isComplete;
+            return {
+              ...item,
+              badge: isComplete ? 'Complete' : isActive ? 'Active' : 'Pending',
+            };
+          });
+        } else {
+          // Search use case: inject last results
+          uiProps.items = currentState.lastResults;
+        }
 
         sendEvent(res, EventType.TOOL_CALL_RESULT, { toolCallId: block.id, result: resultContent });
         sendEvent(res, EventType.CUSTOM, {
