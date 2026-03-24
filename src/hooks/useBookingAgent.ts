@@ -7,6 +7,7 @@ import {
 } from '../types';
 
 const SESSION_ID = crypto.randomUUID();
+const ASSISTANT_ID = new URLSearchParams(window.location.search).get('assistant') ?? 'commercial_prospecting_assistant';
 
 const INITIAL_STATE: ProspectingState = {
   query: null,
@@ -65,6 +66,7 @@ export function useBookingAgent(): UseProspectingAgentReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: SESSION_ID,
+            assistantId: ASSISTANT_ID,
             messages: [apiUserMessage],
           }),
         });
